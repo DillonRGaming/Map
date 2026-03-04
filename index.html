@@ -107,6 +107,7 @@
             iconAnchor: [17, 17]
         });
 
+        let headingAlpha = 0.1; // Smoothing for raw sensor data
         const handleOrientation = (e) => {
             let h = 0;
             if (e.webkitCompassHeading) {
@@ -114,7 +115,12 @@
             } else if (e.alpha !== null) {
                 h = 360 - e.alpha;
             }
-            heading = h;
+
+            // Low-pass filter for the raw sensor data to stop jitter
+            let diff = (h - heading) % 360;
+            if (diff > 180) diff -= 360;
+            if (diff < -180) diff += 360;
+            heading = (heading + diff * headingAlpha + 360) % 360;
         };
 
         let lastUpdate = 0;
@@ -135,10 +141,12 @@
                 if (diff > 180) diff -= 360;
                 else if (diff < -180) diff += 360;
 
-                // Smoothing factor: higher = faster, lower = smoother
-                currentRot += diff * 0.15;
-
-                document.getElementById('arrow').style.transform = `rotate(${currentRot}deg)`;
+                // Only rotate if the difference is more than 0.5 degrees (deadzone)
+                // This prevents the arrow from "breathing" or shaking while stationary
+                if (Math.abs(diff) > 0.5) {
+                    currentRot += diff * 0.12;
+                    document.getElementById('arrow').style.transform = `rotate(${currentRot}deg)`;
+                }
 
                 const a = Math.sin((r2 - r1) / 2) ** 2 + Math.cos(r1) * Math.cos(r2) * Math.sin(dl / 2) ** 2;
                 const d = 6371000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
