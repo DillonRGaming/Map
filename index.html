@@ -19,11 +19,57 @@
             width: 100vw;
             height: 100vh;
         }
+
+        #overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: #000;
+            z-index: 9999;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #close-btn {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            color: #fff;
+            font-size: 40px;
+            cursor: pointer;
+            font-family: sans-serif;
+            line-height: 1;
+            padding: 20px;
+        }
+
+        #arrow {
+            width: 150px;
+            height: 150px;
+            transition: transform 0.1s linear;
+        }
+
+        #dist {
+            color: #fff;
+            font-family: sans-serif;
+            margin-top: 40px;
+            font-size: 36px;
+            font-weight: bold;
+        }
     </style>
 </head>
 
 <body>
     <div id="map"></div>
+    <div id="overlay">
+        <div id="close-btn" onclick="closeOverlay()">×</div>
+        <img id="arrow" src="assets/arrow.png">
+        <div id="dist"></div>
+    </div>
+
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
     <script>
@@ -43,16 +89,58 @@
         });
 
         const markers = {};
+        let usersData = {};
         let centered = false;
         let lastLat = null;
         let lastLng = null;
+        let targetId = null;
+        let heading = 0;
 
         const customIcon = (color) => L.divIcon({
             className: 'custom-icon',
-            html: `<div style="background-color:${color};width:14px;height:14px;border-radius:50%;border:2px solid white;box-shadow:0 0 4px rgba(0,0,0,0.5);"></div>`,
-            iconSize: [18, 18],
-            iconAnchor: [9, 9]
+            html: `<div style="background-color:${color};width:34px;height:34px;border-radius:50%;box-shadow:0 0 8px rgba(0,0,0,0.8);"></div>`,
+            iconSize: [34, 34],
+            iconAnchor: [17, 17]
         });
+
+        const handleOrientation = (e) => {
+            if (e.webkitCompassHeading) {
+                heading = e.webkitCompassHeading;
+            } else if (e.absolute && e.alpha !== null) {
+                heading = 360 - e.alpha;
+            } else if (e.alpha !== null) {
+                heading = 360 - e.alpha;
+            }
+            updateCompass();
+        };
+
+        const updateCompass = () => {
+            if (!targetId || !usersData[targetId] || lastLat === null || lastLng === null) return;
+            const t = usersData[targetId];
+
+            const r1 = lastLat * Math.PI / 180;
+            const r2 = t.lat * Math.PI / 180;
+            const dl = (t.lng - lastLng) * Math.PI / 180;
+
+            const y = Math.sin(dl) * Math.cos(r2);
+            const x = Math.cos(r1) * Math.sin(r2) - Math.sin(r1) * Math.cos(r2) * Math.cos(dl);
+            const bearing = (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+
+            document.getElementById('arrow').style.transform = `rotate(${bearing - heading}deg)`;
+
+            const dp = (t.lat - lastLat) * Math.PI / 180;
+            const a = Math.sin(dp / 2) * Math.sin(dp / 2) + Math.cos(r1) * Math.cos(r2) * Math.sin(dl / 2) * Math.sin(dl / 2);
+            const d = 6371000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+            document.getElementById('dist').innerText = Math.round(d * 3.28084) + " ft";
+        };
+
+        const closeOverlay = () => {
+            targetId = null;
+            document.getElementById('overlay').style.display = 'none';
+            window.removeEventListener('deviceorientationabsolute', handleOrientation);
+            window.removeEventListener('deviceorientation', handleOrientation);
+        };
 
         socket.on('connect', () => {
             if (lastLat !== null && lastLng !== null) {
@@ -69,17 +157,16 @@
                 centered = true;
             }
             socket.emit('loc', { uid, lat: lastLat, lng: lastLng, clr });
+            if (targetId) updateCompass();
         };
 
         navigator.geolocation.getCurrentPosition(updateLoc, () => { }, { enableHighAccuracy: true });
-
-        navigator.geolocation.watchPosition(
-            updateLoc,
-            () => { },
-            { enableHighAccuracy: true, maximumAge: 0, timeout: 5000 }
-        );
+        navigator.geolocation.watchPosition(updateLoc, () => { }, { enableHighAccuracy: true, maximumAge: 0, timeout: 5000 });
 
         socket.on('upd', (users) => {
+            usersData = users;
+            if (targetId && !usersData[targetId]) closeOverlay();
+
             for (let id in markers) {
                 if (!users[id]) {
                     map.removeLayer(markers[id]);
@@ -92,8 +179,27 @@
                     markers[id].setLatLng([u.lat, u.lng]);
                 } else {
                     markers[id] = L.marker([u.lat, u.lng], { icon: customIcon(u.clr) }).addTo(map);
+                    markers[id].on('click', async () => {
+                        if (id === uid) return;
+                        targetId = id;
+                        document.getElementById('overlay').style.display = 'flex';
+
+                        if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+                            try {
+                                const perm = await DeviceOrientationEvent.requestPermission();
+                                if (perm === 'granted') {
+                                    window.addEventListener('deviceorientation', handleOrientation);
+                                }
+                            } catch (err) { }
+                        } else {
+                            window.addEventListener('deviceorientationabsolute', handleOrientation);
+                            window.addEventListener('deviceorientation', handleOrientation);
+                        }
+                        updateCompass();
+                    });
                 }
             }
+            if (targetId) updateCompass();
         });
     </script>
 </body>
