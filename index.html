@@ -50,7 +50,6 @@
         #arrow {
             width: 150px;
             height: 150px;
-            transition: transform 0.2s ease-out;
         }
 
         #dist {
@@ -109,43 +108,48 @@
         });
 
         const handleOrientation = (e) => {
+            let h = 0;
             if (e.webkitCompassHeading) {
-                heading = e.webkitCompassHeading;
-            } else if (e.absolute && e.alpha !== null) {
-                heading = 360 - e.alpha;
+                h = e.webkitCompassHeading;
             } else if (e.alpha !== null) {
-                heading = 360 - e.alpha;
+                h = 360 - e.alpha;
             }
-            updateCompass();
+            heading = h;
         };
 
+        let lastUpdate = 0;
+        const animate = (time) => {
+            if (targetId && usersData[targetId] && lastLat !== null && lastLng !== null) {
+                const t = usersData[targetId];
+                const r1 = lastLat * Math.PI / 180;
+                const r2 = t.lat * Math.PI / 180;
+                const dl = (t.lng - lastLng) * Math.PI / 180;
+
+                const y = Math.sin(dl) * Math.cos(r2);
+                const x = Math.cos(r1) * Math.sin(r2) - Math.sin(r1) * Math.cos(r2) * Math.cos(dl);
+                const bearing = (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+
+                let targetRot = (bearing - heading + 360) % 360;
+                let diff = (targetRot - currentRot) % 360;
+
+                if (diff > 180) diff -= 360;
+                else if (diff < -180) diff += 360;
+
+                // Smoothing factor: higher = faster, lower = smoother
+                currentRot += diff * 0.15;
+
+                document.getElementById('arrow').style.transform = `rotate(${currentRot}deg)`;
+
+                const a = Math.sin((r2 - r1) / 2) ** 2 + Math.cos(r1) * Math.cos(r2) * Math.sin(dl / 2) ** 2;
+                const d = 6371000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+                document.getElementById('dist').innerText = Math.round(d * 3.28084) + " ft";
+            }
+            requestAnimationFrame(animate);
+        };
+        requestAnimationFrame(animate);
+
         const updateCompass = () => {
-            if (!targetId || !usersData[targetId] || lastLat === null || lastLng === null) return;
-            const t = usersData[targetId];
-
-            const r1 = lastLat * Math.PI / 180;
-            const r2 = t.lat * Math.PI / 180;
-            const dl = (t.lng - lastLng) * Math.PI / 180;
-
-            const y = Math.sin(dl) * Math.cos(r2);
-            const x = Math.cos(r1) * Math.sin(r2) - Math.sin(r1) * Math.cos(r2) * Math.cos(dl);
-            const bearing = (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
-
-            let targetRot = bearing - heading;
-            let diff = (targetRot - currentRot) % 360;
-
-            if (diff > 180) diff -= 360;
-            else if (diff < -180) diff += 360;
-
-            currentRot += diff;
-
-            document.getElementById('arrow').style.transform = `rotate(${currentRot}deg)`;
-
-            const dp = (t.lat - lastLat) * Math.PI / 180;
-            const a = Math.sin(dp / 2) * Math.sin(dp / 2) + Math.cos(r1) * Math.cos(r2) * Math.sin(dl / 2) * Math.sin(dl / 2);
-            const d = 6371000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-
-            document.getElementById('dist').innerText = Math.round(d * 3.28084) + " ft";
+            // Logic moved to animate loop for smoothness
         };
 
         const closeOverlay = () => {
