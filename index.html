@@ -1,14 +1,27 @@
 <!DOCTYPE html>
 <html>
+
 <head>
     <title>Map</title>
     <link rel="icon" href="data:,">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
-        body, html { margin: 0; padding: 0; height: 100%; background: #000; overflow: hidden; }
-        #map { width: 100vw; height: 100vh; }
+        body,
+        html {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            background: #000;
+            overflow: hidden;
+        }
+
+        #map {
+            width: 100vw;
+            height: 100vh;
+        }
     </style>
 </head>
+
 <body>
     <div id="map"></div>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -16,16 +29,23 @@
     <script>
         if (!localStorage.getItem('uid')) {
             localStorage.setItem('uid', Math.random().toString(36).substring(2, 15));
-            localStorage.setItem('clr', '#' + Math.floor(Math.random()*16777215).toString(16).padStart(6, '0'));
+            localStorage.setItem('clr', '#' + Math.floor(Math.random() * 16777215).toString(16).padStart(6, '0'));
         }
         const uid = localStorage.getItem('uid');
         const clr = localStorage.getItem('clr');
-        
+
         const map = L.map('map', { zoomControl: false, attributionControl: false }).setView([0, 0], 2);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-        
-        const socket = io('https://willis-transported-placidly.ngrok-free.dev');
+
+        const socket = io('https://willis-transported-placidly.ngrok-free.dev', {
+            transports: ['websocket'],
+            upgrade: false
+        });
+
         const markers = {};
+        let centered = false;
+        let lastLat = null;
+        let lastLng = null;
 
         const customIcon = (color) => L.divIcon({
             className: 'custom-icon',
@@ -34,19 +54,28 @@
             iconAnchor: [9, 9]
         });
 
-        let centered = false;
+        socket.on('connect', () => {
+            if (lastLat !== null && lastLng !== null) {
+                socket.emit('loc', { uid, lat: lastLat, lng: lastLng, clr });
+            }
+        });
+
+        const updateLoc = (pos) => {
+            lastLat = pos.coords.latitude;
+            lastLng = pos.coords.longitude;
+
+            if (!centered) {
+                map.setView([lastLat, lastLng], 15);
+                centered = true;
+            }
+            socket.emit('loc', { uid, lat: lastLat, lng: lastLng, clr });
+        };
+
+        navigator.geolocation.getCurrentPosition(updateLoc, () => { }, { enableHighAccuracy: true });
 
         navigator.geolocation.watchPosition(
-            (pos) => {
-                const lat = pos.coords.latitude;
-                const lng = pos.coords.longitude;
-                if (!centered) {
-                    map.setView([lat, lng], 15);
-                    centered = true;
-                }
-                socket.emit('loc', { uid, lat, lng, clr });
-            },
-            () => {},
+            updateLoc,
+            () => { },
             { enableHighAccuracy: true, maximumAge: 0, timeout: 5000 }
         );
 
@@ -68,4 +97,5 @@
         });
     </script>
 </body>
+
 </html>
