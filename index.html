@@ -20,6 +20,10 @@
             height: 100vh;
         }
 
+        .leaflet-marker-icon {
+            transition: transform 0.4s linear;
+        }
+
         #overlay {
             display: none;
             position: fixed;
@@ -49,7 +53,7 @@
         #arrow {
             width: 150px;
             height: 150px;
-            transition: transform 0.1s linear;
+            transition: transform 0.2s ease-out;
         }
 
         #dist {
@@ -80,8 +84,11 @@
         const uid = localStorage.getItem('uid');
         const clr = localStorage.getItem('clr');
 
-        const map = L.map('map', { zoomControl: false, attributionControl: false }).setView([0, 0], 2);
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+        const map = L.map('map', { zoomControl: false, attributionControl: false, maxZoom: 24 }).setView([0, 0], 2);
+        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+            maxZoom: 24,
+            maxNativeZoom: 18
+        }).addTo(map);
 
         const socket = io('https://willis-transported-placidly.ngrok-free.dev', {
             transports: ['websocket'],
@@ -95,10 +102,11 @@
         let lastLng = null;
         let targetId = null;
         let heading = 0;
+        let currentRot = 0;
 
         const customIcon = (color) => L.divIcon({
             className: 'custom-icon',
-            html: `<div style="background-color:${color};width:34px;height:34px;border-radius:50%;box-shadow:0 0 8px rgba(0,0,0,0.8);"></div>`,
+            html: `<div style="background-color:${color};width:34px;height:34px;border-radius:50%;box-shadow:0 0 10px rgba(0,0,0,1);"></div>`,
             iconSize: [34, 34],
             iconAnchor: [17, 17]
         });
@@ -126,7 +134,15 @@
             const x = Math.cos(r1) * Math.sin(r2) - Math.sin(r1) * Math.cos(r2) * Math.cos(dl);
             const bearing = (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
 
-            document.getElementById('arrow').style.transform = `rotate(${bearing - heading}deg)`;
+            let targetRot = bearing - heading;
+            let diff = (targetRot - currentRot) % 360;
+
+            if (diff > 180) diff -= 360;
+            else if (diff < -180) diff += 360;
+
+            currentRot += diff;
+
+            document.getElementById('arrow').style.transform = `rotate(${currentRot}deg)`;
 
             const dp = (t.lat - lastLat) * Math.PI / 180;
             const a = Math.sin(dp / 2) * Math.sin(dp / 2) + Math.cos(r1) * Math.cos(r2) * Math.sin(dl / 2) * Math.sin(dl / 2);
@@ -153,7 +169,7 @@
             lastLng = pos.coords.longitude;
 
             if (!centered) {
-                map.setView([lastLat, lastLng], 15);
+                map.setView([lastLat, lastLng], 18);
                 centered = true;
             }
             socket.emit('loc', { uid, lat: lastLat, lng: lastLng, clr });
@@ -161,7 +177,7 @@
         };
 
         navigator.geolocation.getCurrentPosition(updateLoc, () => { }, { enableHighAccuracy: true });
-        navigator.geolocation.watchPosition(updateLoc, () => { }, { enableHighAccuracy: true, maximumAge: 0, timeout: 5000 });
+        navigator.geolocation.watchPosition(updateLoc, () => { }, { enableHighAccuracy: true, maximumAge: 0, timeout: 2000 });
 
         socket.on('upd', (users) => {
             usersData = users;
