@@ -306,7 +306,7 @@
         }
 
         .leaflet-marker-icon {
-            transition: transform 0.3s cubic-bezier(0, 0, 0, 1), left 0.3s cubic-bezier(0, 0, 0, 1), top 0.3s cubic-bezier(0, 0, 0, 1);
+            transition: transform 0.5s linear, left 0.5s linear, top 0.5s linear;
         }
 
         .no-transition .leaflet-marker-icon {
@@ -579,7 +579,7 @@
                 : `<svg viewBox="0 0 24 24" style="width: 20px; height: 20px;"><circle cx="12" cy="12" r="10" fill="${color}"/></svg>`;
             return L.divIcon({
                 className: 'marker-container',
-                html: `<div style="transform: rotate(${showRot ? heading : 0}deg); transition: transform 0.3s ease-out;">${svg}</div>`,
+                html: `<div style="transform: rotate(${showRot ? heading : 0}deg); transition: transform 0.5s linear; display: flex; justify-content: center; align-items: center; width: 100%; height: 100%;">${svg}</div>`,
                 iconSize: showRot ? [28, 28] : [20, 20],
                 iconAnchor: showRot ? [14, 14] : [10, 10]
             });
@@ -593,19 +593,38 @@
             for (let id in markers) {
                 if (!pData[id]) { map.removeLayer(markers[id]); delete markers[id]; }
             }
+            const showRot = gameSettings.showRotation;
             for (let id in pData) {
                 const p = pData[id];
                 const pos = [p.lat, p.lng];
                 if (markers[id]) {
                     markers[id].setLatLng(pos);
-                    markers[id].setIcon(createIcon(p.color, p.heading, gameSettings.showRotation));
+                    if (markers[id].lastShowRot !== showRot) {
+                        markers[id].setIcon(createIcon(p.color, p.heading, showRot));
+                        markers[id].lastShowRot = showRot;
+                    } else {
+                        const el = markers[id].getElement();
+                        if (el) {
+                            const div = el.querySelector('div');
+                            if (div) {
+                                div.style.transform = `rotate(${showRot ? p.heading : 0}deg)`;
+                            }
+                        }
+                    }
                 } else {
-                    markers[id] = L.marker(pos, { icon: createIcon(p.color, p.heading, gameSettings.showRotation) }).addTo(map);
+                    markers[id] = L.marker(pos, { icon: createIcon(p.color, p.heading, showRot) }).addTo(map);
+                    markers[id].lastShowRot = showRot;
                     markers[id].on('click', () => handleMarkerClick(id, p));
                 }
 
                 if (selectedUid === id) {
-                    if (activeRoute) activeRoute.addLatLng(pos);
+                    if (activeRoute) {
+                        const latlngs = activeRoute.getLatLngs();
+                        const lastLatLng = latlngs.length > 0 ? latlngs[latlngs.length - 1] : null;
+                        if (!lastLatLng || lastLatLng.lat !== pos[0] || lastLatLng.lng !== pos[1]) {
+                            activeRoute.addLatLng(pos);
+                        }
+                    }
                     if (isFollowing) map.panTo(pos);
                 }
             }
