@@ -683,7 +683,7 @@
             if (gameSettings.gameActive && gameSettings.gameMode === 'ring') {
                 const currentSyncedTime = Date.now() + serverTimeOffset;
                 const elapsed = (currentSyncedTime - gameSettings.startTime) / 1000;
-                if (elapsed >= gameSettings.runnerTime) {
+                if (elapsed >= gameSettings.runnerTime && gameSettings.ringRadius > 0) {
                     if (!activeRing && gameSettings.ringLat) {
                         activeRing = L.circle([gameSettings.ringLat, gameSettings.ringLng], {
                             color: '#ffffff',
@@ -692,6 +692,8 @@
                             interactive: false,
                             radius: gameSettings.ringRadius
                         }).addTo(map);
+                    } else if (activeRing) {
+                        activeRing.setRadius(gameSettings.ringRadius);
                     }
                 } else {
                     if (activeRing) { map.removeLayer(activeRing); activeRing = null; }
