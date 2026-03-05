@@ -350,8 +350,8 @@
             </div>
 
             <div class="toggle-row" style="cursor: default;">
-                <span>Runner Headstart (mins)</span>
-                <input type="number" id="runner-time" value="5"
+                <span>Runner Headstart (secs)</span>
+                <input type="number" id="runner-time" value="120"
                     style="padding: 0; margin: 0; width: 60px; text-align: right; border: none; font-size: 16px;">
             </div>
 
@@ -591,10 +591,10 @@
 
         function saveAdminSettings() {
             const timeMin = parseInt(document.getElementById('game-time').value) || 60;
-            const runnerMin = parseInt(document.getElementById('runner-time').value) || 5;
+            const runnerSec = parseInt(document.getElementById('runner-time').value) || 120;
             socket.emit('save_settings', {
                 winTime: timeMin * 60,
-                runnerTime: runnerMin * 60,
+                runnerTime: runnerSec,
                 showRotation: rotationEnabled,
                 runnersSeeHunters: runnersSeeHuntersEnabled,
                 gameMode: gameMode
