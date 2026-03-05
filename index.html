@@ -510,14 +510,22 @@
         let compassHeading = null;
         function updateCompass(e) {
             let heading = 0;
-            if (e.webkitCompassHeading) {
+            if (e.webkitCompassHeading !== undefined) {
                 heading = e.webkitCompassHeading;
             } else if (e.absolute && e.alpha !== null) {
                 heading = 360 - e.alpha;
             } else {
                 return;
             }
-            compassHeading = heading;
+
+            let orientation = 0;
+            if (window.screen && window.screen.orientation && window.screen.orientation.angle !== undefined) {
+                orientation = window.screen.orientation.angle;
+            } else if (typeof window.orientation !== 'undefined') {
+                orientation = window.orientation;
+            }
+
+            compassHeading = (heading + orientation) % 360;
         }
 
         let lastValidHeading = 0;
