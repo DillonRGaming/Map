@@ -169,15 +169,29 @@
         }
 
         .kick-btn {
-            color: #888;
+            width: 32px;
+            height: 32px;
+            background: #000;
+            border: 1px solid #333;
+            color: #fff;
+            display: flex;
+            justify-content: center;
+            align-items: center;
             cursor: pointer;
-            padding: 8px;
             font-size: 14px;
             transition: 0.2s;
+            margin-left: 10px;
         }
 
         .kick-btn:hover {
+            border-color: #ff3b30;
             color: #ff3b30;
+        }
+
+        .toggle-row.disabled {
+            opacity: 0.3;
+            pointer-events: none;
+            cursor: not-allowed;
         }
 
         .hud {
@@ -266,7 +280,11 @@
         }
 
         .leaflet-marker-icon {
-            transition: transform 0.1s linear, left 0.1s linear, top 0.1s linear;
+            transition: transform 0.3s cubic-bezier(0, 0, 0, 1), left 0.3s cubic-bezier(0, 0, 0, 1), top 0.3s cubic-bezier(0, 0, 0, 1);
+        }
+
+        .no-transition .leaflet-marker-icon {
+            transition: none !important;
         }
     </style>
 </head>
@@ -287,7 +305,7 @@
         <h1>Map</h1>
         <div style="width: 100%; max-width: 300px;">
             <input type="text" id="username" placeholder="Name" autocomplete="off">
-            <div class="toggle-row" onclick="toggleAdminLogin()" style="border: none;">
+            <div class="toggle-row" id="admin-toggle-row" onclick="toggleAdminLogin()" style="border: none;">
                 <span>Host</span>
                 <div class="switch" id="admin-switch"></div>
             </div>
@@ -359,9 +377,26 @@
         if (saved.name) document.getElementById('username').value = saved.name;
         if (saved.isAdmin) document.getElementById('admin-switch').classList.add('active');
 
+        let adminExistsLocally = false;
         function toggleAdminLogin() {
+            if (adminExistsLocally) return;
             document.getElementById('admin-switch').classList.toggle('active');
         }
+
+        socket.on('admin_status', (status) => {
+            adminExistsLocally = status.exists;
+            const row = document.getElementById('admin-toggle-row');
+            const toggle = document.getElementById('admin-switch');
+
+            // If we are already the host (saved in localstorage) we shouldn't be disabled
+            const saved = JSON.parse(localStorage.getItem('tactical_login') || '{}');
+
+            if (adminExistsLocally && !saved.isAdmin) {
+                row.classList.add('disabled');
+            } else {
+                row.classList.remove('disabled');
+            }
+        });
 
         function setRot(val) {
             rotationEnabled = val;
@@ -399,18 +434,29 @@
             }
 
             if (!map) {
-                map = L.map('map', { zoomControl: false, attributionControl: false }).setView([0, 0], 2);
+                map = L.map('map', {
+                    zoomControl: false,
+                    attributionControl: false,
+                    zoomAnimation: true,
+                    fadeAnimation: true,
+                    markerZoomAnimation: true
+                }).setView([0, 0], 2);
                 L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}').addTo(map);
+
+                map.on('movestart zoomstart', () => document.getElementById('map').classList.add('no-transition'));
+                map.on('moveend zoomend', () => document.getElementById('map').classList.remove('no-transition'));
             }
             startTracking();
         });
 
+        let lastValidHeading = 0;
         function startTracking() {
             navigator.geolocation.watchPosition((pos) => {
                 const { latitude: lat, longitude: lng, heading } = pos.coords;
                 window.lastPos = { lat, lng };
+                if (heading !== null && heading !== undefined) lastValidHeading = heading;
                 if (!centered) { recenterMap(); centered = true; }
-                socket.emit('loc', { uid: myUid, lat, lng, heading });
+                socket.emit('loc', { uid: myUid, lat, lng, heading: lastValidHeading });
             }, () => { }, { enableHighAccuracy: true, maximumAge: 0, timeout: 5000 });
         }
 
@@ -443,9 +489,14 @@
 
         const createIcon = (color, heading, showRot) => {
             const svg = showRot
-                ? `<svg viewBox="0 0 24 24" style="transform: rotate(${heading}deg); width: 28px; height: 28px;"><path d="M12 2L22 20L12 16L2 20Z" fill="${color}"/></svg>`
+                ? `<svg viewBox="0 0 24 24" style="width: 28px; height: 28px;"><path d="M12 2L22 20L12 16L2 20Z" fill="${color}"/></svg>`
                 : `<svg viewBox="0 0 24 24" style="width: 20px; height: 20px;"><circle cx="12" cy="12" r="10" fill="${color}"/></svg>`;
-            return L.divIcon({ className: '', html: svg, iconSize: showRot ? [28, 28] : [20, 20], iconAnchor: showRot ? [14, 14] : [10, 10] });
+            return L.divIcon({
+                className: 'marker-container',
+                html: `<div style="transform: rotate(${showRot ? heading : 0}deg); transition: transform 0.3s ease-out;">${svg}</div>`,
+                iconSize: showRot ? [28, 28] : [20, 20],
+                iconAnchor: showRot ? [14, 14] : [10, 10]
+            });
         };
 
         socket.on('upd', (data) => {
@@ -501,11 +552,13 @@
                         <div style="display:flex; align-items:center; gap:12px; font-size:16px; flex: 1;">
                             <div style="width:12px; height:12px; background:${p.color};"></div>
                             ${p.name}
-                            ${p.role !== 'admin' ? `<span class="kick-btn" onclick="kickPlayer('${p.uid}')">✕</span>` : ''}
                         </div>
-                        <div class="segmented" style="width: 140px; margin: 0;">
-                            <div class="seg-btn ${p.team === 'runner' ? 'active' : ''}" onclick="changeTeam('${p.uid}', 'runner')">Runner</div>
-                            <div class="seg-btn ${p.team === 'hunter' ? 'active' : ''}" onclick="changeTeam('${p.uid}', 'hunter')">Hunter</div>
+                        <div style="display:flex; align-items:center;">
+                            <div class="segmented" style="width: 140px; margin: 0;">
+                                <div class="seg-btn ${p.team === 'runner' ? 'active' : ''}" onclick="changeTeam('${p.uid}', 'runner')">Runner</div>
+                                <div class="seg-btn ${p.team === 'hunter' ? 'active' : ''}" onclick="changeTeam('${p.uid}', 'hunter')">Hunter</div>
+                            </div>
+                            ${p.role !== 'admin' ? `<div class="kick-btn" onclick="kickPlayer('${p.uid}')">✕</div>` : ''}
                         </div>
                     </div>`;
             });
