@@ -386,13 +386,12 @@
         socket.on('admin_status', (status) => {
             adminExistsLocally = status.exists;
             const row = document.getElementById('admin-toggle-row');
-            const toggle = document.getElementById('admin-switch');
-
-            // If we are already the host (saved in localstorage) we shouldn't be disabled
+            const switchEl = document.getElementById('admin-switch');
             const saved = JSON.parse(localStorage.getItem('tactical_login') || '{}');
 
             if (adminExistsLocally && !saved.isAdmin) {
                 row.classList.add('disabled');
+                switchEl.classList.remove('active');
             } else {
                 row.classList.remove('disabled');
             }
