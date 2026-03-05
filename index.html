@@ -435,6 +435,7 @@
 
         let map, markers = {}, playerRole, playerTeam, gameSettings, activeRoute, activeRing = null, selectedUid = null;
         let centered = false, rotationEnabled = true, runnersSeeHuntersEnabled = true, gameMode = 'normal', isFollowing = false, localPlayers = {};
+        let serverTimeOffset = 0;
 
         const saved = JSON.parse(localStorage.getItem('tactical_login') || '{}');
         if (saved.name) document.getElementById('username').value = saved.name;
@@ -668,7 +669,10 @@
         };
 
         socket.on('upd', (data) => {
-            const { players: pData, settings: sData } = data;
+            const { players: pData, settings: sData, serverTime } = data;
+            if (serverTime) {
+                serverTimeOffset = serverTime - Date.now();
+            }
             gameSettings = sData;
             localPlayers = pData;
 
@@ -677,38 +681,16 @@
             }
 
             if (gameSettings.gameActive && gameSettings.gameMode === 'ring') {
-                const elapsed = (Date.now() - gameSettings.startTime) / 1000;
+                const currentSyncedTime = Date.now() + serverTimeOffset;
+                const elapsed = (currentSyncedTime - gameSettings.startTime) / 1000;
                 if (elapsed >= gameSettings.runnerTime) {
                     if (!activeRing && gameSettings.ringLat) {
-                        const earthRadius = 6371000;
-                        const R = gameSettings.ringRadius;
-
-                        const centerLat = gameSettings.ringLat * Math.PI / 180;
-                        const centerLng = gameSettings.ringLng * Math.PI / 180;
-
-                        const innerCoords = [];
-                        for (let i = 0; i <= 360; i += 5) {
-                            const bearing = i * Math.PI / 180;
-                            const lat = Math.asin(Math.sin(centerLat) * Math.cos(R / earthRadius) +
-                                Math.cos(centerLat) * Math.sin(R / earthRadius) * Math.cos(bearing));
-                            const lng = centerLng + Math.atan2(Math.sin(bearing) * Math.sin(R / earthRadius) * Math.cos(centerLat),
-                                Math.cos(R / earthRadius) - Math.sin(centerLat) * Math.sin(lat));
-                            innerCoords.push([lat * 180 / Math.PI, lng * 180 / Math.PI]);
-                        }
-
-                        const outerCoords = [
-                            [85, -180],
-                            [85, 180],
-                            [-85, 180],
-                            [-85, -180],
-                            [85, -180]
-                        ];
-
-                        activeRing = L.polygon([outerCoords, innerCoords], {
+                        activeRing = L.circle([gameSettings.ringLat, gameSettings.ringLng], {
                             color: '#ffffff',
                             weight: 3,
-                            fillColor: '#ffffff',
-                            fillOpacity: 0.3
+                            fill: false,
+                            interactive: false,
+                            radius: gameSettings.ringRadius
                         }).addTo(map);
                     }
                 } else {
@@ -830,7 +812,8 @@
                 document.getElementById('hud-timer').innerText = "00:00";
                 return;
             }
-            const elapsed = (Date.now() - gameSettings.startTime) / 1000;
+            const currentSyncedTime = Date.now() + serverTimeOffset;
+            const elapsed = (currentSyncedTime - gameSettings.startTime) / 1000;
             let remaining = 0;
 
             if (elapsed < gameSettings.runnerTime) {
