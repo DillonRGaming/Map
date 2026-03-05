@@ -406,6 +406,11 @@
         function joinGame() {
             const name = document.getElementById('username').value.trim();
             if (!name) return;
+
+            if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+                DeviceOrientationEvent.requestPermission().catch(console.error);
+            }
+
             const isAdmin = document.getElementById('admin-switch').classList.contains('active');
             localStorage.setItem('tactical_login', JSON.stringify({ name, isAdmin }));
             socket.emit('join', { uid: myUid, name, isAdmin });
@@ -444,18 +449,43 @@
 
                 map.on('movestart zoomstart', () => document.getElementById('map').classList.add('no-transition'));
                 map.on('moveend zoomend', () => document.getElementById('map').classList.remove('no-transition'));
+                map.on('click', (e) => { if (e.originalEvent.target.id === 'map') deselect(); });
             }
             startTracking();
         });
 
+        let compassHeading = null;
+        function updateCompass(e) {
+            let heading = 0;
+            if (e.webkitCompassHeading) {
+                heading = e.webkitCompassHeading;
+            } else if (e.absolute && e.alpha !== null) {
+                heading = 360 - e.alpha;
+            } else {
+                return;
+            }
+            compassHeading = heading;
+        }
+
         let lastValidHeading = 0;
         function startTracking() {
+            window.addEventListener('deviceorientation', updateCompass, true);
+            window.addEventListener('deviceorientationabsolute', updateCompass, true);
+
             navigator.geolocation.watchPosition((pos) => {
-                const { latitude: lat, longitude: lng, heading } = pos.coords;
+                const { latitude: lat, longitude: lng, heading: gpsHeading } = pos.coords;
                 window.lastPos = { lat, lng };
-                if (heading !== null && heading !== undefined) lastValidHeading = heading;
+
+                let finalHeading = lastValidHeading;
+                if (compassHeading !== null) {
+                    finalHeading = compassHeading;
+                } else if (gpsHeading !== null && gpsHeading !== undefined) {
+                    finalHeading = gpsHeading;
+                }
+
+                lastValidHeading = finalHeading;
                 if (!centered) { recenterMap(); centered = true; }
-                socket.emit('loc', { uid: myUid, lat, lng, heading: lastValidHeading });
+                socket.emit('loc', { uid: myUid, lat, lng, heading: finalHeading });
             }, () => { }, { enableHighAccuracy: true, maximumAge: 0, timeout: 5000 });
         }
 
@@ -523,15 +553,22 @@
 
         function handleMarkerClick(id, p) {
             if (selectedUid === id) {
-                selectedUid = null;
-                if (activeRoute) { map.removeLayer(activeRoute); activeRoute = null; }
-                markers[id].unbindTooltip();
+                deselect();
             } else {
-                if (selectedUid && markers[selectedUid]) markers[selectedUid].unbindTooltip();
+                deselect();
                 selectedUid = id;
                 markers[id].bindTooltip(p.name, { permanent: true, direction: 'top', className: 'clean-tooltip', offset: [0, -10] }).openTooltip();
                 socket.emit('req_route', id);
             }
+        }
+
+        function deselect() {
+            if (selectedUid && markers[selectedUid]) {
+                markers[selectedUid].closeTooltip();
+                markers[selectedUid].unbindTooltip();
+            }
+            selectedUid = null;
+            if (activeRoute) { map.removeLayer(activeRoute); activeRoute = null; }
         }
 
         socket.on('route_data', (data) => {
