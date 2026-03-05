@@ -344,12 +344,26 @@
             <h1>Settings</h1>
 
             <div class="toggle-row" style="cursor: default;">
-                <span>Time (mins)</span>
+                <span>Main Time (mins)</span>
                 <input type="number" id="game-time" value="60"
                     style="padding: 0; margin: 0; width: 60px; text-align: right; border: none; font-size: 16px;">
             </div>
 
+            <div class="toggle-row" style="cursor: default;">
+                <span>Runner Headstart (mins)</span>
+                <input type="number" id="runner-time" value="5"
+                    style="padding: 0; margin: 0; width: 60px; text-align: right; border: none; font-size: 16px;">
+            </div>
+
             <div class="toggle-row" style="cursor: default; border: none; padding-bottom: 5px;">
+                <span>Game Mode</span>
+            </div>
+            <div class="segmented" style="margin-bottom: 20px;">
+                <div class="seg-btn active" onclick="setMode('normal')" id="mode-normal">Normal</div>
+                <div class="seg-btn" onclick="setMode('ring')" id="mode-ring">Ring</div>
+            </div>
+
+            <div class="toggle-row" style="cursor: default; border: none; padding-bottom: 5px; margin-top: 10px;">
                 <span>Markers</span>
             </div>
             <div class="segmented" style="margin-bottom: 30px;">
@@ -368,8 +382,16 @@
                 Players</div>
             <div id="admin-players" style="margin-bottom: 40px;"></div>
 
-            <button onclick="startGame()">Start</button>
+            <button onclick="saveAdminSettings()">Save</button>
+            <button id="panel-stop-btn" class="hidden" onclick="emitStop()"
+                style="margin-top: 10px; background: #ff3b30; color: #fff; border: none;">Stop Game</button>
         </div>
+    </div>
+
+    <div id="admin-controls" class="hidden"
+        style="position: absolute; bottom: 100px; left: 50%; transform: translateX(-50%); z-index: 1000; display: flex; gap: 10px;">
+        <button id="main-start-btn" onclick="emitStart()"
+            style="padding: 12px 24px; font-size: 18px; border-radius: 8px;">START</button>
     </div>
 
     <div id="hud" class="hud hidden">
@@ -411,8 +433,8 @@
             }
         });
 
-        let map, markers = {}, playerRole, playerTeam, gameSettings, activeRoute, selectedUid = null;
-        let centered = false, rotationEnabled = true, runnersSeeHuntersEnabled = true, isFollowing = false, localPlayers = {};
+        let map, markers = {}, playerRole, playerTeam, gameSettings, activeRoute, activeRing = null, selectedUid = null;
+        let centered = false, rotationEnabled = true, runnersSeeHuntersEnabled = true, gameMode = 'normal', isFollowing = false, localPlayers = {};
 
         const saved = JSON.parse(localStorage.getItem('tactical_login') || '{}');
         if (saved.name) document.getElementById('username').value = saved.name;
@@ -474,15 +496,22 @@
             if (playerRole === 'admin') {
                 document.getElementById('settings-btn').classList.remove('hidden');
                 document.getElementById('visibility-switch').classList.toggle('active', runnersSeeHuntersEnabled);
+                document.getElementById('admin-controls').classList.remove('hidden');
                 if (!gameSettings.gameActive) {
+                    document.getElementById('main-start-btn').classList.remove('hidden');
+                    document.getElementById('panel-stop-btn').classList.add('hidden');
                     document.getElementById('admin-panel').classList.remove('hidden');
                 } else {
+                    document.getElementById('main-start-btn').classList.add('hidden');
+                    document.getElementById('panel-stop-btn').classList.remove('hidden');
                     document.getElementById('hud').classList.remove('hidden');
                     document.getElementById('recenter').classList.remove('hidden');
                 }
             } else {
-                document.getElementById('hud').classList.remove('hidden');
-                document.getElementById('recenter').classList.remove('hidden');
+                if (gameSettings.gameActive) {
+                    document.getElementById('hud').classList.remove('hidden');
+                    document.getElementById('recenter').classList.remove('hidden');
+                }
             }
 
             if (!map) {
@@ -554,13 +583,33 @@
             if (window.lastPos && map) map.setView([window.lastPos.lat, window.lastPos.lng], 17);
         }
 
-        function startGame() {
+        function setMode(val) {
+            gameMode = val;
+            document.getElementById('mode-ring').classList.toggle('active', val === 'ring');
+            document.getElementById('mode-normal').classList.toggle('active', val === 'normal');
+        }
+
+        function saveAdminSettings() {
             const timeMin = parseInt(document.getElementById('game-time').value) || 60;
-            socket.emit('start_game', {
+            const runnerMin = parseInt(document.getElementById('runner-time').value) || 5;
+            socket.emit('save_settings', {
                 winTime: timeMin * 60,
+                runnerTime: runnerMin * 60,
                 showRotation: rotationEnabled,
-                runnersSeeHunters: runnersSeeHuntersEnabled
+                runnersSeeHunters: runnersSeeHuntersEnabled,
+                gameMode: gameMode
             });
+            document.getElementById('admin-panel').classList.add('hidden');
+        }
+
+        function emitStart() {
+            socket.emit('start_game');
+        }
+
+        function emitStop() {
+            if (confirm('Stop the game?')) {
+                socket.emit('stop_game');
+            }
         }
 
         function toggleSettings() {
@@ -572,13 +621,38 @@
             location.reload();
         }
 
+        socket.on('settings_updated', (settings) => {
+            gameSettings = settings;
+            if (playerRole === 'admin') {
+                document.getElementById('admin-controls').classList.toggle('hidden', gameSettings.gameActive);
+                document.getElementById('main-start-btn').classList.toggle('hidden', gameSettings.gameActive);
+                document.getElementById('panel-stop-btn').classList.toggle('hidden', !gameSettings.gameActive);
+            }
+        });
+
         socket.on('game_started', (settings) => {
             gameSettings = settings;
             document.getElementById('admin-panel').classList.add('hidden');
             document.getElementById('hud').classList.remove('hidden');
             document.getElementById('recenter').classList.remove('hidden');
+            if (playerRole === 'admin') {
+                document.getElementById('admin-controls').classList.add('hidden');
+                document.getElementById('main-start-btn').classList.add('hidden');
+                document.getElementById('panel-stop-btn').classList.remove('hidden');
+            }
             if (activeRoute) { map.removeLayer(activeRoute); activeRoute = null; }
             setTimeout(() => { if (map) map.invalidateSize(); }, 100);
+        });
+
+        socket.on('game_stopped', (settings) => {
+            gameSettings = settings;
+            document.getElementById('hud').classList.add('hidden');
+            if (playerRole === 'admin') {
+                document.getElementById('admin-controls').classList.remove('hidden');
+                document.getElementById('main-start-btn').classList.remove('hidden');
+                document.getElementById('panel-stop-btn').classList.add('hidden');
+            }
+            if (activeRing) { map.removeLayer(activeRing); activeRing = null; }
         });
 
         const createIcon = (color, heading, showRot) => {
@@ -601,6 +675,25 @@
             for (let id in markers) {
                 if (!pData[id]) { map.removeLayer(markers[id]); delete markers[id]; }
             }
+
+            if (gameSettings.gameActive && gameSettings.gameMode === 'ring') {
+                const elapsed = (Date.now() - gameSettings.startTime) / 1000;
+                if (elapsed >= gameSettings.runnerTime) {
+                    if (!activeRing && gameSettings.ringLat) {
+                        activeRing = L.circle([gameSettings.ringLat, gameSettings.ringLng], {
+                            color: 'red',
+                            fillColor: '#f03',
+                            fillOpacity: 0.1,
+                            radius: gameSettings.ringRadius
+                        }).addTo(map);
+                    }
+                } else {
+                    if (activeRing) { map.removeLayer(activeRing); activeRing = null; }
+                }
+            } else {
+                if (activeRing) { map.removeLayer(activeRing); activeRing = null; }
+            }
+
             const showRot = gameSettings.showRotation;
             for (let id in pData) {
                 const p = pData[id];
@@ -709,9 +802,19 @@
         });
 
         setInterval(() => {
-            if (!gameSettings || !gameSettings.startTime) return;
+            if (!gameSettings || !gameSettings.startTime || !gameSettings.gameActive) {
+                document.getElementById('hud-timer').innerText = "00:00";
+                return;
+            }
             const elapsed = (Date.now() - gameSettings.startTime) / 1000;
-            const remaining = Math.max(0, gameSettings.winTime - elapsed);
+            let remaining = 0;
+
+            if (elapsed < gameSettings.runnerTime) {
+                remaining = Math.max(0, gameSettings.runnerTime - elapsed);
+            } else {
+                remaining = Math.max(0, gameSettings.winTime - (elapsed - gameSettings.runnerTime));
+            }
+
             const m = Math.floor(remaining / 60);
             const s = Math.floor(remaining % 60).toString().padStart(2, '0');
             document.getElementById('hud-timer').innerText = `${m}:${s}`;
