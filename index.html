@@ -306,7 +306,7 @@
         }
 
         .leaflet-marker-icon {
-            transition: transform 0.5s linear, left 0.5s linear, top 0.5s linear;
+            transition: transform 0.1s linear, left 0.1s linear, top 0.1s linear;
         }
 
         .no-transition .leaflet-marker-icon {
@@ -662,7 +662,7 @@
                 : `<svg viewBox="0 0 24 24" style="width: 20px; height: 20px;"><circle cx="12" cy="12" r="10" fill="${color}"/></svg>`;
             return L.divIcon({
                 className: 'marker-container',
-                html: `<div style="transform: rotate(${showRot ? heading : 0}deg); transition: transform 0.5s linear; display: flex; justify-content: center; align-items: center; width: 100%; height: 100%;">${svg}</div>`,
+                html: `<div style="transform: rotate(${showRot ? heading : 0}deg); transition: transform 0.1s linear; display: flex; justify-content: center; align-items: center; width: 100%; height: 100%;">${svg}</div>`,
                 iconSize: showRot ? [28, 28] : [20, 20],
                 iconAnchor: showRot ? [14, 14] : [10, 10]
             });
