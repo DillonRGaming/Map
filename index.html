@@ -757,8 +757,10 @@
                             interactive: false,
                             radius: gameSettings.ringRadius
                         }).addTo(map);
-                    } else if (activeRing) {
+                        activeRing._lastRadius = gameSettings.ringRadius;
+                    } else if (activeRing && activeRing._lastRadius !== gameSettings.ringRadius) {
                         activeRing.setRadius(gameSettings.ringRadius);
+                        activeRing._lastRadius = gameSettings.ringRadius;
                     }
 
                     if (isRunner && pData[myUid] && gameSettings.ringLat) {
