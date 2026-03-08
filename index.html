@@ -537,6 +537,13 @@
                 document.getElementById('settings-btn').classList.remove('hidden');
                 document.getElementById('visibility-switch').classList.toggle('active', runnersSeeHuntersEnabled);
                 document.getElementById('admin-controls').classList.remove('hidden');
+                // Pre-populate settings inputs from server values
+                document.getElementById('game-time').value = Math.round(gameSettings.winTime / 60);
+                document.getElementById('runner-time').value = gameSettings.runnerTime;
+                rotationEnabled = gameSettings.showRotation;
+                gameMode = gameSettings.gameMode;
+                setRot(rotationEnabled);
+                setMode(gameMode);
                 if (!gameSettings.gameActive) {
                     document.getElementById('main-start-btn').classList.remove('hidden');
                     document.getElementById('panel-stop-btn').classList.add('hidden');
@@ -665,6 +672,10 @@
 
         socket.on('settings_updated', (settings) => {
             gameSettings = settings;
+            if (gameSettings.gameActive) {
+                document.getElementById('hud').classList.remove('hidden');
+                document.getElementById('recenter').classList.remove('hidden');
+            }
             if (playerRole === 'admin') {
                 document.getElementById('admin-controls').classList.toggle('hidden', gameSettings.gameActive);
                 document.getElementById('main-start-btn').classList.toggle('hidden', gameSettings.gameActive);
@@ -692,6 +703,7 @@
         socket.on('game_stopped', (settings) => {
             gameSettings = settings;
             document.getElementById('hud').classList.add('hidden');
+            document.getElementById('recenter').classList.add('hidden');
             document.getElementById('game-over-overlay').classList.add('hidden');
             ringExitStartTime = null;
             ringExitTimer = null;
@@ -727,9 +739,9 @@
             const shouldHideHunters = isRunner && !sData.runnersSeeHunters;
 
             for (let id in markers) {
-                if (!pData[id] || (shouldHideHunters && pData[id].team === 'hunter')) { 
-                    map.removeLayer(markers[id]); 
-                    delete markers[id]; 
+                if (!pData[id] || (shouldHideHunters && pData[id].team === 'hunter')) {
+                    map.removeLayer(markers[id]);
+                    delete markers[id];
                 }
             }
 
@@ -766,7 +778,7 @@
                             }
                             if (timeOutside >= 10000 && !ringExitTimer) {
                                 ringExitTimer = true;
-                                socket.emit('stop_game');
+                                socket.emit('ring_exit_stop');
                                 const overlay = document.getElementById('game-over-overlay');
                                 document.getElementById('game-over-message').innerText = myPos.name + " outside of ring";
                                 overlay.classList.remove('hidden');
@@ -801,7 +813,7 @@
             for (let id in pData) {
                 const p = pData[id];
                 if (shouldHideHunters && p.team === 'hunter') continue;
-                
+
                 const pos = [p.lat, p.lng];
                 if (markers[id]) {
                     markers[id].setLatLng(pos);
@@ -873,7 +885,8 @@
             if (selectedUid !== data.uid) return;
             if (activeRoute) map.removeLayer(activeRoute);
             const latlngs = data.route.map(r => [r.lat, r.lng]);
-            activeRoute = L.polyline(latlngs, { color: localPlayers[data.uid].color, weight: 4, opacity: 1 }).addTo(map);
+            const color = (localPlayers[data.uid] && localPlayers[data.uid].color) || '#ffffff';
+            activeRoute = L.polyline(latlngs, { color, weight: 4, opacity: 1 }).addTo(map);
         });
 
         socket.on('player_list', (list) => {
