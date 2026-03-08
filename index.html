@@ -312,6 +312,40 @@
         .no-transition .leaflet-marker-icon {
             transition: none !important;
         }
+
+        .no-transition .leaflet-circle {
+            transition: none !important;
+        }
+
+        .no-transition .leaflet-circle-internal {
+            transition: none !important;
+        }
+
+        #game-over-overlay {
+            position: fixed;
+            inset: 0;
+            background: #000;
+            z-index: 4000;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 30px;
+        }
+
+        #game-over-overlay h1 {
+            font-size: 32px;
+            font-weight: bold;
+            margin: 0 0 20px 0;
+            text-align: center;
+            color: #ff3b30;
+        }
+
+        #game-over-overlay p {
+            font-size: 20px;
+            color: #fff;
+            text-align: center;
+        }
     </style>
 </head>
 
@@ -415,6 +449,11 @@
             <circle cx="12" cy="12" r="3" />
         </svg>
         <span>FOLLOW</span>
+    </div>
+
+    <div id="game-over-overlay" class="overlay hidden">
+        <h1>GAME OVER</h1>
+        <p id="game-over-message"></p>
     </div>
 
     <div id="map"></div>
@@ -538,6 +577,8 @@
         });
 
         let compassHeading = null;
+        let ringExitTimer = null;
+        let ringExitStartTime = null;
         function updateCompass(e) {
             let heading = 0;
             if (e.webkitCompassHeading !== undefined) {
@@ -636,6 +677,9 @@
             document.getElementById('admin-panel').classList.add('hidden');
             document.getElementById('hud').classList.remove('hidden');
             document.getElementById('recenter').classList.remove('hidden');
+            document.getElementById('game-over-overlay').classList.add('hidden');
+            ringExitStartTime = null;
+            ringExitTimer = null;
             if (playerRole === 'admin') {
                 document.getElementById('admin-controls').classList.add('hidden');
                 document.getElementById('main-start-btn').classList.add('hidden');
@@ -648,6 +692,9 @@
         socket.on('game_stopped', (settings) => {
             gameSettings = settings;
             document.getElementById('hud').classList.add('hidden');
+            document.getElementById('game-over-overlay').classList.add('hidden');
+            ringExitStartTime = null;
+            ringExitTimer = null;
             if (playerRole === 'admin') {
                 document.getElementById('admin-controls').classList.remove('hidden');
                 document.getElementById('main-start-btn').classList.remove('hidden');
@@ -676,8 +723,14 @@
             gameSettings = sData;
             localPlayers = pData;
 
+            const isRunner = playerTeam === 'runner';
+            const shouldHideHunters = isRunner && !sData.runnersSeeHunters;
+
             for (let id in markers) {
-                if (!pData[id]) { map.removeLayer(markers[id]); delete markers[id]; }
+                if (!pData[id] || (shouldHideHunters && pData[id].team === 'hunter')) { 
+                    map.removeLayer(markers[id]); 
+                    delete markers[id]; 
+                }
             }
 
             if (gameSettings.gameActive && gameSettings.gameMode === 'ring') {
@@ -695,16 +748,60 @@
                     } else if (activeRing) {
                         activeRing.setRadius(gameSettings.ringRadius);
                     }
+
+                    if (isRunner && pData[myUid] && gameSettings.ringLat) {
+                        const myPos = pData[myUid];
+                        const ringCenter = L.latLng(gameSettings.ringLat, gameSettings.ringLng);
+                        const myLatLng = L.latLng(myPos.lat, myPos.lng);
+                        const distance = ringCenter.distanceTo(myLatLng);
+                        const isOutside = distance > gameSettings.ringRadius;
+
+                        if (isOutside) {
+                            if (!ringExitStartTime) {
+                                ringExitStartTime = Date.now();
+                            }
+                            const timeOutside = Date.now() - ringExitStartTime;
+                            if (activeRing) {
+                                activeRing.setStyle({ color: '#ff3b30' });
+                            }
+                            if (timeOutside >= 10000 && !ringExitTimer) {
+                                ringExitTimer = true;
+                                socket.emit('stop_game');
+                                const overlay = document.getElementById('game-over-overlay');
+                                document.getElementById('game-over-message').innerText = myPos.name + " outside of ring";
+                                overlay.classList.remove('hidden');
+                                setTimeout(() => {
+                                    overlay.classList.add('hidden');
+                                    ringExitStartTime = null;
+                                    ringExitTimer = null;
+                                }, 10000);
+                            }
+                        } else {
+                            if (ringExitStartTime || ringExitTimer) {
+                                ringExitStartTime = null;
+                                ringExitTimer = null;
+                            }
+                            if (activeRing) {
+                                activeRing.setStyle({ color: '#ffffff' });
+                            }
+                        }
+                    }
                 } else {
                     if (activeRing) { map.removeLayer(activeRing); activeRing = null; }
+                    ringExitStartTime = null;
+                    ringExitTimer = null;
                 }
             } else {
                 if (activeRing) { map.removeLayer(activeRing); activeRing = null; }
+                ringExitStartTime = null;
+                ringExitTimer = null;
             }
 
             const showRot = gameSettings.showRotation;
             for (let id in pData) {
                 const p = pData[id];
+                if (shouldHideHunters && p.team === 'hunter') continue;
+                
                 const pos = [p.lat, p.lng];
                 if (markers[id]) {
                     markers[id].setLatLng(pos);
